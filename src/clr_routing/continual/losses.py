@@ -1,0 +1,56 @@
+"""Auxiliary routing loss.
+
+Implements equations (9) and (10) from the report:
+
+    target q̃_k = softmax(cos(c_t, p_k) / τ) over experts k
+    L_route = KL(q̃ || q(x))
+
+The target uses the *current task* prototype c_t and the *current expert*
+prototypes p_k, so it provides a within-task consistency signal.
+"""
+
+from __future__ import annotations
+
+import torch
+from torch import nn
+from torch.nn import functional as F
+
+from clr_routing.models.router import PrototypeMemory, _safe_normalize
+
+
+class RoutingKLLoss(nn.Module):
+    """KL(target || prediction) for routing supervision.
+
+    Convention: KLDivLoss expects log-probabilities for the input and
+    probabilities for the target. We pass log(q(x)) and target q̃.
+    """
+
+    def __init__(self, memory: PrototypeMemory, temperature: float = 0.5) -> None:
+        super().__init__()
+        self._memory = memory
+        self._temperature = temperature
+
+    def forward(self, distribution: torch.Tensor, task_id: int) -> torch.Tensor:
+        """Compute the routing KL loss.
+
+        Args:
+            distribution: (B, E) softmax routing distribution q(x).
+            task_id: Current task identifier for selecting c_t.
+
+        Returns:
+            Scalar loss. Returns 0 if the task or any expert prototype is
+            uninitialized (cannot compute a meaningful target yet).
+        """
+        if not bool(self._memory.task_initialized[task_id]):
+            return distribution.new_zeros(())
+        if not bool(self._memory.expert_initialized.all()):
+            return distribution.new_zeros(())
+
+        c_t = self._memory.task_prototype_normalized(task_id)  # (D,)
+        p = self._memory.expert_prototypes_normalized()  # (E, D)
+        target_logits = (p @ c_t) / self._temperature  # (E,)
+        target = torch.softmax(target_logits, dim=-1)  # (E,)
+        target = target.unsqueeze(0).expand_as(distribution)  # (B, E)
+
+        log_q = (distribution.clamp_min(1e-12)).log()
+        return F.kl_div(log_q, target, reduction="batchmean")

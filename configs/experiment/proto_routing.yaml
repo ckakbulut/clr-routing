@@ -1,0 +1,5 @@
+# @package _global_
+# Prototype-guided routing with entropy-adaptive top-N selection.
+method: prototype
+wandb:
+  name: proto_routing

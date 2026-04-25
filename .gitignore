@@ -1,15 +1,18 @@
-# Python-generated files
+.venv/
 __pycache__/
-*.py[oc]
-build/
-dist/
-wheels/
-*.egg-info
+*.pyc
+*.pyo
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
 data/
 checkpoints/
+outputs/
 wandb/
-ouptuts/
-.DS_Store
+.hydra/
 
-# Virtual environments
-.venv
+.DS_Store
+.idea/
+.vscode/
+*.swp

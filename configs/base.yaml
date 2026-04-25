@@ -1,0 +1,50 @@
+defaults:
+  - experiment: proto_routing
+  - _self_
+
+seed: 42
+device: auto  # 'auto' picks cuda > mps > cpu; or set explicitly to 'cuda', 'mps', 'cpu'
+method: prototype  # overridden by experiment configs
+
+data:
+  name: split_cifar100
+  num_tasks: 10
+  classes_per_task: 10
+  root: ./data
+  batch_size: 64
+  num_workers: 4
+
+model:
+  backbone: vit_small_patch16_224
+  pretrained: true
+  num_classes: 100
+  num_experts: 5
+  lora_rank: 8
+  lora_alpha: 16
+
+routing:
+  temperature: 0.5
+  entropy_low: 0.4
+  entropy_high: 0.9
+  max_active: 3
+  prototype_ema_beta: 0.1
+  task_prototype_ema_gamma: 0.1
+
+replay:
+  enabled: true
+  per_expert_capacity: 200
+  replay_batch_size: 32
+  global_replay: false
+
+train:
+  epochs_per_task: 5
+  lr: 3e-4
+  weight_decay: 0.01
+  lambda_replay: 1.0
+  lambda_route: 0.1
+  log_every: 50
+
+wandb:
+  project: clr-routing
+  name: null
+  mode: online  # 'offline' or 'disabled' for testing
