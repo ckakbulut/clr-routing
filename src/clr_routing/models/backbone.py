@@ -67,11 +67,13 @@ class ViTBackbone(BackboneBase):
 
     def features(self, x: torch.Tensor) -> torch.Tensor:
         tokens = self._forward_tokens(x)
-        return tokens[:, 0]  # CLS token
+        return tokens[:, 0]  # CLS (classification i.e. summary over the batch) token
 
     def representation(self, x: torch.Tensor) -> torch.Tensor:
         tokens = self._forward_tokens(x)
-        return tokens[:, 1:].mean(dim=1)  # mean over patch tokens
+        return tokens[:, 1:].mean(
+            dim=1
+        )  # mean over patch tokens, don't include index 0 as that's the CLS token
 
     @property
     def embed_dim(self) -> int:
