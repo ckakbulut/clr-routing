@@ -1,6 +1,6 @@
 """Auxiliary routing loss.
 
-Implements equations (9) and (10) from the report:
+Implements equations (9) and (10) from the interim report where we talk about routing loss:
 
     target q̃_k = softmax(cos(c_t, p_k) / τ) over experts k
     L_route = KL(q̃ || q(x))
