@@ -1,5 +1,6 @@
 defaults:
   - experiment: proto_routing
+  - override hydra/job_logging: custom
   - _self_
 
 seed: 42
