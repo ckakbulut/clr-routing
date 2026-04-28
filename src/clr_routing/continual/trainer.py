@@ -8,6 +8,7 @@ ablations without modifying this code.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 
@@ -24,6 +25,8 @@ from clr_routing.data.cifar100_split import SplitCIFAR100, make_loader
 from clr_routing.models import ContinualLearner
 from clr_routing.models.router import PrototypeMemory
 from clr_routing.utils.device import DeviceInfo
+
+log = logging.getLogger(__name__)
 
 
 @dataclass
@@ -85,6 +88,8 @@ class ContinualTrainer:
         """
         test_loaders: dict[int, DataLoader] = {}
         for task_id, (train_ds, _) in enumerate(stream):
+            spec = train_ds.spec
+            log.info("Starting task %d (%d classes)", spec.task_id, spec.num_classes)
             train_loader = make_loader(
                 train_ds,
                 batch_size=self._cfg.train_batch_size,
@@ -108,6 +113,13 @@ class ContinualTrainer:
                 self._metrics.record(task_id, prior_id, acc)
 
             snapshot = self._metrics.snapshot(task_id)
+            log.info(
+                "After task %d — avg_acc=%.4f avg_forget=%.4f bwt=%.4f",
+                snapshot.task_id,
+                snapshot.average_accuracy,
+                snapshot.average_forgetting,
+                snapshot.backward_transfer,
+            )
             self._log(
                 {
                     "continual/avg_accuracy": snapshot.average_accuracy,
@@ -153,9 +165,7 @@ class ContinualTrainer:
         is_bootstrap = not bool(self._memory.expert_initialized.all())
         if is_bootstrap:
             n_experts = int(self._memory.expert_initialized.shape[0])
-            bootstrap_assignment = (
-                torch.arange(x.shape[0], device=x.device) % n_experts
-            )
+            bootstrap_assignment = torch.arange(x.shape[0], device=x.device) % n_experts
             for k in range(n_experts):
                 mask_k = bootstrap_assignment == k
                 if mask_k.any():
@@ -211,6 +221,16 @@ class ContinualTrainer:
         loss_total = (
             loss_task + self._cfg.lambda_replay * loss_replay + self._cfg.lambda_route * loss_route
         )
+        if self._global_step % self._cfg.log_every == 0:
+            log.info(
+                "task=%d step=%d loss_total=%.4f loss_task=%.4f loss_replay=%.4f loss_route=%.4f",
+                task_id,
+                self._global_step,
+                loss_total.item(),
+                loss_task.item(),
+                loss_replay.item(),
+                loss_route.item(),
+            )
         loss_total.backward()
         self._optimizer.step()
 

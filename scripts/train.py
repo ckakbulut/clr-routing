@@ -9,8 +9,9 @@ Usage:
 from __future__ import annotations
 
 import hydra
-import torch
 import json
+import logging
+import torch
 from pathlib import Path
 import numpy as np
 
@@ -37,6 +38,8 @@ from clr_routing.models import (
     ViTBackbone,
 )
 from clr_routing.utils import WandBLogger, select_device, set_seed
+
+log = logging.getLogger(__name__)
 
 
 def build_router(cfg: DictConfig, memory: PrototypeMemory):
@@ -79,8 +82,10 @@ def build_buffer(cfg: DictConfig):
 
 @hydra.main(version_base=None, config_path="../configs", config_name="base")
 def main(cfg: DictConfig) -> None:
+    log.info("Resolved config:\n%s", OmegaConf.to_yaml(cfg, resolve=True))
     set_seed(cfg.seed)
     device_info = select_device(cfg.device)
+    log.info("Using device: %s", device_info)
     print(f"[clr-routing] Using {device_info}")
 
     # --- data ---
@@ -117,6 +122,11 @@ def main(cfg: DictConfig) -> None:
 
     # --- buffer, optimizer, losses ---
     buffer = build_buffer(cfg)
+    log.info(
+        "Replay buffer: %s (capacity=%d)",
+        type(buffer).__name__,
+        cfg.replay.per_expert_capacity,
+    )
     trainable = [p for p in learner.parameters() if p.requires_grad]
     optimizer = torch.optim.AdamW(trainable, lr=cfg.train.lr, weight_decay=cfg.train.weight_decay)
     routing_loss = (
