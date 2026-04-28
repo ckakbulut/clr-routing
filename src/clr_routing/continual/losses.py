@@ -7,6 +7,19 @@ Implements equations (9) and (10) from the interim report where we talk about ro
 
 The target uses the *current task* prototype c_t and the *current expert*
 prototypes p_k, so it provides a within-task consistency signal.
+
+Known issue — KL routing loss collapse (lambda_route = 0):
+    Both q(x) and q̃ are computed from the frozen backbone representation r(x)
+    and the EMA-updated prototype buffers. The buffers are registered as
+    `register_buffer` (not `Parameter`) and updated under `@torch.no_grad()`,
+    and the backbone is frozen; therefore neither q(x) nor q̃ carries a gradient
+    w.r.t. any trainable parameter. `loss_total.backward()` produces zero
+    gradient from this term, so the proposed routing supervision is a silent
+    no-op during training. We disable it by setting `lambda_route = 0` at the
+    config level rather than altering the methodology.
+    TODO: revisit routing supervision so eqs. (9)-(10) actually contribute
+    gradient — e.g., a learned projection on r(x), or learnable expert
+    prototypes — and then restore lambda_route > 0.
 """
 
 from __future__ import annotations
@@ -41,6 +54,11 @@ class RoutingKLLoss(nn.Module):
             Scalar loss. Returns 0 if the task or any expert prototype is
             uninitialized (cannot compute a meaningful target yet).
         """
+        max_tasks = int(self._memory.task_initialized.shape[0])
+        if not 0 <= task_id < max_tasks:
+            raise IndexError(
+                f"task_id={task_id} out of range for task buffer of size {max_tasks}"
+            )
         if not bool(self._memory.task_initialized[task_id]):
             return distribution.new_zeros(())
         if not bool(self._memory.expert_initialized.all()):

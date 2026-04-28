@@ -96,9 +96,14 @@ class PrototypeMemory(nn.Module):
 
 
 class EntropyGate:
-    """Maps per-sample entropy to a top-N selection (1, 2, or 3 experts).
+    """Maps per-sample entropy to a top-N selection in {1, ..., max_n}.
 
-    Thresholds are configurable. The default policy:
+    Generalizes the three-bin policy (low/mid/high entropy) to any `max_n`.
+    Thresholds are placed at `max_n - 1` linearly spaced points in
+    [entropy_low, entropy_high]; entropies at or above the i-th threshold
+    activate at least i+1 experts.
+
+    Default (max_n=3):
         H(q) < entropy_low                    -> 1 expert
         entropy_low <= H(q) < entropy_high    -> 2 experts
         H(q) >= entropy_high                  -> 3 experts
@@ -107,16 +112,24 @@ class EntropyGate:
     def __init__(self, entropy_low: float, entropy_high: float, max_n: int = 3) -> None:
         if entropy_low > entropy_high:
             raise ValueError("entropy_low must be <= entropy_high")
+        if max_n < 1:
+            raise ValueError("max_n must be >= 1")
         self._low = entropy_low
         self._high = entropy_high
         self._max_n = max_n
+        if max_n == 1:
+            self._thresholds = torch.empty(0)
+        else:
+            self._thresholds = torch.linspace(entropy_low, entropy_high, max_n - 1)
 
     def __call__(self, entropy: torch.Tensor) -> torch.Tensor:
         """Return per-sample integer N in {1, ..., max_n}."""
-        n = torch.ones_like(entropy, dtype=torch.long)
-        n = torch.where(entropy >= self._low, n + 1, n)
-        n = torch.where(entropy >= self._high, n + 1, n)
-        return torch.clamp(n, max=self._max_n)
+        if self._thresholds.numel() == 0:
+            return torch.ones_like(entropy, dtype=torch.long)
+        thresholds = self._thresholds.to(entropy.device)
+        # Count how many thresholds the entropy meets/exceeds; offset by 1.
+        passed = (entropy.unsqueeze(-1) >= thresholds).long().sum(dim=-1)
+        return passed + 1
 
 
 class RoutingStrategy(nn.Module, ABC):
@@ -137,6 +150,19 @@ class PrototypeRouter(RoutingStrategy):
     q(x)   = softmax(s(x) / temperature)
     Number of selected experts is determined by the entropy of q(x) via
     `EntropyGate`.
+
+    Note on the routing KL loss collapse:
+        `q(x)` is built from the frozen backbone representation `r(x)` and the
+        EMA-updated expert prototypes `p_k` (registered as buffers, not
+        parameters). Neither carries a gradient w.r.t. any trainable parameter,
+        so the routing distribution itself is gradient-free. Consequently the
+        proposed `loss_route = KL(q̃ || q)` has no gradient path and contributes
+        nothing during training. We disable it by setting `lambda_route = 0` at
+        the config level rather than introducing a trainable projection here,
+        which would change the methodology beyond a bug fix.
+        TODO: revisit routing supervision design (e.g., a trainable projection
+        on `r(x)` or learnable expert prototypes) so eqs. (9)-(10) of the
+        report actually contribute gradient.
     """
 
     def __init__(
@@ -177,9 +203,16 @@ class PrototypeRouter(RoutingStrategy):
             )
 
         scores = r @ p.T  # (B, E)
+        # Mask uninitialized experts: their zero prototype rows would otherwise
+        # contribute exp(0)/Z to the softmax and pollute routing.
+        init_mask = self._memory.expert_initialized.to(scores.device)
+        scores = scores.masked_fill(~init_mask.unsqueeze(0), float("-inf"))
         distribution = torch.softmax(scores / self._temperature, dim=-1)
         entropy = _entropy(distribution)
         n_active = self._gate(entropy)
+        # Cap active experts by the number actually initialized so we don't
+        # try to select more "real" experts than exist.
+        n_active = torch.minimum(n_active, init_mask.sum().to(n_active))
         weights = _select_top_n(distribution, n_active)
         return RoutingDecision(
             weights=weights,
@@ -231,9 +264,13 @@ class FixedTopKRouter(RoutingStrategy):
             return RoutingDecision(uniform, uniform, entropy, n_active)
 
         scores = r @ p.T
+        init_mask = self._memory.expert_initialized.to(scores.device)
+        scores = scores.masked_fill(~init_mask.unsqueeze(0), float("-inf"))
         distribution = torch.softmax(scores / self._temperature, dim=-1)
         entropy = _entropy(distribution)
-        n_active = torch.full((distribution.shape[0],), self._k,
+        # Cap k by the number of initialized experts in the early phase.
+        k_eff = min(self._k, int(init_mask.sum().item()))
+        n_active = torch.full((distribution.shape[0],), k_eff,
                               dtype=torch.long, device=distribution.device)
         weights = _select_top_n(distribution, n_active)
         return RoutingDecision(weights, distribution, entropy, n_active)
@@ -260,14 +297,14 @@ def _select_top_n(distribution: torch.Tensor, n_active: torch.Tensor) -> torch.T
         (B, E) sparse weights summing to 1 along the expert dim.
     """
     b, e = distribution.shape
-    # For each row, find the threshold value (the n_active-th largest).
-    # We sort descending and gather the threshold per row.
-    sorted_vals, _ = distribution.sort(dim=-1, descending=True)
-    # n_active[b] is in [1, E]. We pick sorted_vals[b, n_active[b] - 1].
-    idx = (n_active.clamp(min=1, max=e) - 1).unsqueeze(-1)  # (B, 1)
-    threshold = sorted_vals.gather(dim=-1, index=idx)  # (B, 1)
-
-    mask = distribution >= threshold
+    # Rank-based selection (handles ties): for each row, sort descending and
+    # mark the first `n_active[b]` ranks as kept. A threshold-based mask would
+    # over-select when multiple entries equal the threshold (e.g., uniform).
+    _, sort_idx = distribution.sort(dim=-1, descending=True, stable=True)
+    ranks = torch.empty_like(sort_idx)
+    arange_e = torch.arange(e, device=distribution.device).unsqueeze(0).expand(b, -1)
+    ranks.scatter_(1, sort_idx, arange_e)
+    mask = ranks < n_active.clamp(min=1, max=e).unsqueeze(-1)
     weights = distribution * mask
     weights = weights / weights.sum(dim=-1, keepdim=True).clamp_min(1e-12)
     return weights

@@ -1,4 +1,4 @@
-"""Continual learning metrics: accuracy matrix, average accuracy, forgetting, BWT.
+"""Continual learning metrics: accuracy matrix, average accuracy, forgetting, BWT (Backward Transfer).
 
 Standard definitions following Lopez-Paz & Ranzato (GEM, 2017):
 
@@ -62,7 +62,7 @@ class ContinualMetrics:
         forgetting_terms = []
         bwt_terms = []
         for j in range(after_task):
-            history = self._matrix[: after_task, j]  # rows 0..after_task-1
+            history = self._matrix[:after_task, j]  # rows 0..after_task-1
             best = float(np.nanmax(history))
             current = float(row[j])
             forgetting_terms.append(best - current)

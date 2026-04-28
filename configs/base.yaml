@@ -41,7 +41,11 @@ train:
   lr: 3e-4
   weight_decay: 0.01
   lambda_replay: 1.0
-  lambda_route: 0.1
+  # Routing KL loss is disabled: q(x) depends only on the frozen backbone and
+  # EMA buffers, so KL(q̃ || q) has no gradient path. See losses.py docstring.
+  # TODO: re-enable once the router has a trainable parameter on the path
+  # from r(x) to q(x) (learned projection or learnable prototypes).
+  lambda_route: 0.0
   log_every: 50
 
 wandb:

@@ -50,14 +50,21 @@ class ContinualLearner(nn.Module):
             return self.backbone.representation(x)
 
     def forward(
-        self, x: torch.Tensor, return_routing: bool = False
+        self,
+        x: torch.Tensor,
+        return_routing: bool = False,
+        representation: torch.Tensor | None = None,
     ) -> torch.Tensor | tuple[torch.Tensor, RoutingDecision]:
         """Standard forward returning logits.
 
         If `return_routing=True`, also returns the `RoutingDecision` so the
         trainer can update prototypes and replay buffers.
+
+        If `representation` is provided, the backbone forward used for routing
+        is skipped (the trainer typically computes r once for prototype updates
+        and can pass it back in here).
         """
-        r = self.representation(x)
+        r = representation if representation is not None else self.representation(x)
         decision = self.router.route(r)
 
         with self.lora_bank.activated(decision.weights):

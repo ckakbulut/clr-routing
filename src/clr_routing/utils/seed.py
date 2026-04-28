@@ -22,11 +22,12 @@ def set_seed(seed: int, deterministic: bool = True) -> None:
           but we call backend-specific seeders explicitly for safety across
           PyTorch versions.
         - cuDNN flags are CUDA-specific but safe to set unconditionally.
+        - PYTHONHASHSEED can only be set before interpreter startup; we do not
+          touch it at runtime because that has no effect.
     """
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
-    os.environ["PYTHONHASHSEED"] = str(seed)
 
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
@@ -43,3 +44,14 @@ def set_seed(seed: int, deterministic: bool = True) -> None:
         torch.backends.cudnn.benchmark = False
         # Only relevant on CUDA; harmless on other backends.
         os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
+
+
+def seed_worker(worker_id: int) -> None:
+    """`worker_init_fn` for DataLoader: re-seeds Python's `random` and NumPy in
+    each worker from the per-worker torch seed, so augmentation and any user
+    code in a worker is deterministic given a fixed `set_seed` in the main
+    process.
+    """
+    seed = torch.initial_seed() % 2**32
+    random.seed(seed)
+    np.random.seed(seed)

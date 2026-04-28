@@ -16,3 +16,4 @@ wandb/
 .idea/
 .vscode/
 *.swp
+bugs.md

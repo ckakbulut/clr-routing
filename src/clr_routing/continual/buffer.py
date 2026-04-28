@@ -25,8 +25,8 @@ class ReplaySample:
 class ReservoirBuffer:
     """Bounded reservoir sampler maintaining a uniform sample over the stream.
 
-    Standard reservoir sampling (Algorithm R): for the n-th item observed,
-    if `n < capacity` store it; otherwise replace a random existing item with
+    Standard reservoir sampling (Algorithm R): for the n-th item observed, if
+    `n < capacity` store it; otherwise replace a random existing item with
     probability `capacity / n`.
     """
 

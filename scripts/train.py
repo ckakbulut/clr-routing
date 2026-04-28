@@ -10,6 +10,10 @@ from __future__ import annotations
 
 import hydra
 import torch
+import json
+from pathlib import Path
+import numpy as np
+
 from hydra.utils import instantiate
 from omegaconf import DictConfig, OmegaConf
 from torch import nn
@@ -114,9 +118,7 @@ def main(cfg: DictConfig) -> None:
     # --- buffer, optimizer, losses ---
     buffer = build_buffer(cfg)
     trainable = [p for p in learner.parameters() if p.requires_grad]
-    optimizer = torch.optim.AdamW(
-        trainable, lr=cfg.train.lr, weight_decay=cfg.train.weight_decay
-    )
+    optimizer = torch.optim.AdamW(trainable, lr=cfg.train.lr, weight_decay=cfg.train.weight_decay)
     routing_loss = (
         RoutingKLLoss(memory=memory, temperature=cfg.routing.temperature)
         if cfg.train.lambda_route > 0
@@ -126,6 +128,7 @@ def main(cfg: DictConfig) -> None:
     trainer_cfg = TrainerConfig(
         epochs_per_task=cfg.train.epochs_per_task,
         train_batch_size=cfg.data.batch_size,
+        eval_batch_size=cfg.data.get("eval_batch_size", cfg.data.batch_size * 2),
         replay_batch_size=cfg.replay.replay_batch_size,
         num_workers=cfg.data.num_workers,
         lambda_replay=cfg.train.lambda_replay,
@@ -138,7 +141,7 @@ def main(cfg: DictConfig) -> None:
         project=cfg.wandb.project,
         name=cfg.wandb.name,
         config=OmegaConf.to_container(cfg, resolve=True),
-        tags=[cfg.method, f"k{cfg.model.num_experts}"],
+        tags=[str(cfg.method), f"k{int(cfg.model.num_experts)}"],
         mode=cfg.wandb.mode,
     ) as logger:
         trainer = ContinualTrainer(
@@ -152,7 +155,45 @@ def main(cfg: DictConfig) -> None:
             routing_loss=routing_loss,
             log_callback=logger.log,
         )
-        trainer.run(stream)
+        final_metrics = trainer.run(stream)
+
+        out_dir = Path("outputs/results") / (cfg.wandb.name or "run")
+        out_dir.mkdir(parents=True, exist_ok=True)
+
+        np.save(out_dir / "accuracy_matrix.npy", final_metrics.matrix)
+
+        # Task-expert similarity (uninitialized rows/cols are NaN-masked so
+        # downstream plotting does not show "perfectly dissimilar" by mistake).
+        task_p = memory.task_prototypes.detach().cpu().numpy()
+        expert_p = memory.expert_prototypes.detach().cpu().numpy()
+        task_init = memory.task_initialized.detach().cpu().numpy()
+        expert_init = memory.expert_initialized.detach().cpu().numpy()
+
+        def _norm(x):
+            n = np.linalg.norm(x, axis=-1, keepdims=True)
+            return x / np.clip(n, 1e-8, None)
+
+        sim = _norm(task_p) @ _norm(expert_p).T
+        valid = task_init[:, None] & expert_init[None, :]
+        sim = np.where(valid, sim, np.nan)
+        np.save(out_dir / "task_expert_similarity.npy", sim)
+
+        # Final summary as JSON for easy table generation.
+        snap = final_metrics.snapshot(cfg.data.num_tasks - 1)
+        with open(out_dir / "summary.json", "w") as f:
+            json.dump(
+                {
+                    "method": cfg.method,
+                    "global_replay": cfg.replay.global_replay,
+                    "seed": cfg.seed,
+                    "avg_accuracy": snap.average_accuracy,
+                    "avg_forgetting": snap.average_forgetting,
+                    "bwt": snap.backward_transfer,
+                    "per_task_accuracy": snap.per_task_accuracy,
+                },
+                f,
+                indent=2,
+            )
 
 
 if __name__ == "__main__":

@@ -51,6 +51,17 @@ def test_select_top_n_per_sample():
     assert (weights[1] > 0).sum().item() == 3
 
 
+def test_select_top_n_handles_ties():
+    """Regression: a uniform distribution with n_active=2 must return exactly
+    2 active experts, not 4. Threshold-based masking would over-select all
+    tied entries."""
+    dist = torch.full((1, 4), 0.25)
+    n = torch.tensor([2])
+    weights = _select_top_n(dist, n)
+    assert (weights[0] > 0).sum().item() == 2
+    assert weights.sum(dim=-1).item() == pytest.approx(1.0, abs=1e-6)
+
+
 def test_entropy_gate_thresholds():
     gate = EntropyGate(entropy_low=0.5, entropy_high=1.0)
     e = torch.tensor([0.1, 0.7, 1.5])
@@ -61,6 +72,25 @@ def test_entropy_gate_thresholds():
 def test_entropy_gate_validates_thresholds():
     with pytest.raises(ValueError):
         EntropyGate(entropy_low=1.0, entropy_high=0.5)
+
+
+def test_entropy_gate_supports_max_n_greater_than_3():
+    """Regression: with max_n=5, high entropy should produce 5 active experts."""
+    gate = EntropyGate(entropy_low=0.0, entropy_high=2.0, max_n=5)
+    # 4 thresholds at [0.0, 0.5, 1.0, 1.5, 2.0]; with linspace(low, high, max_n-1)
+    # = linspace(0, 2, 4) = [0, 0.667, 1.333, 2.0]
+    e = torch.tensor([-1.0, 0.5, 1.0, 1.5, 5.0])
+    n = gate(e).tolist()
+    assert n[0] == 1  # below all thresholds
+    assert n[-1] == 5  # at/above all thresholds
+    assert max(n) <= 5
+    assert min(n) >= 1
+
+
+def test_entropy_gate_max_n_one():
+    gate = EntropyGate(entropy_low=0.0, entropy_high=1.0, max_n=1)
+    e = torch.tensor([0.1, 0.7, 1.5])
+    assert gate(e).tolist() == [1, 1, 1]
 
 
 def test_prototype_memory_first_update_initializes_directly():
@@ -120,3 +150,23 @@ def test_fixed_topk_activates_exactly_k():
     r = torch.randn(3, 4)
     decision = router.route(r)
     assert (decision.weights > 0).sum(dim=-1).tolist() == [2, 2, 2]
+
+
+def test_prototype_router_ignores_uninitialized_experts():
+    """Regression: uninitialized prototypes (zero rows) must not get any
+    softmax probability, otherwise they pollute routing for the rest of training."""
+    mem = PrototypeMemory(num_experts=4, embed_dim=4, max_tasks=2)
+    # Initialize only experts 0 and 2.
+    mem.update_expert(0, torch.tensor([[1.0, 0.0, 0.0, 0.0]]))
+    mem.update_expert(2, torch.tensor([[0.0, 0.0, 1.0, 0.0]]))
+
+    gate = EntropyGate(0.4, 0.9)
+    router = PrototypeRouter(mem, gate, num_experts=4, temperature=0.5)
+    r = torch.tensor([[1.0, 0.0, 0.0, 0.0]])
+    decision = router.route(r)
+
+    # Uninitialized experts (1, 3) must have zero probability.
+    assert decision.distribution[0, 1].item() == pytest.approx(0.0, abs=1e-6)
+    assert decision.distribution[0, 3].item() == pytest.approx(0.0, abs=1e-6)
+    # Initialized experts share all the mass.
+    assert decision.distribution[0, [0, 2]].sum().item() == pytest.approx(1.0, abs=1e-6)

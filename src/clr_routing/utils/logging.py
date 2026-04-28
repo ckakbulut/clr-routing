@@ -64,7 +64,10 @@ class WandBLogger:
         """Log scalar metrics, histograms, or W&B media objects."""
         if self._run is None:
             return
-        wandb.log(metrics, step=step)
+        if step is None:
+            wandb.log(metrics)
+        else:
+            wandb.log(metrics, step=step)
 
     def log_table(self, key: str, columns: list[str], data: list[list[Any]]) -> None:
         """Log a table (e.g. expert utilization per task)."""
