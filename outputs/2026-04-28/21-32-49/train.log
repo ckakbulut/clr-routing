@@ -1,0 +1,70 @@
+[2026-04-28 21:32:49,693][__main__][INFO] - Resolved config:
+method: prototype
+wandb:
+  name: proto_per_expert_smoke
+  project: clr-routing
+  mode: disabled
+seed: 42
+device: auto
+data:
+  name: split_cifar100
+  num_tasks: 10
+  classes_per_task: 10
+  root: ./data
+  batch_size: 8
+  num_workers: 0
+model:
+  backbone: vit_small_patch16_224
+  pretrained: true
+  num_classes: 100
+  num_experts: 5
+  lora_rank: 8
+  lora_alpha: 16
+routing:
+  temperature: 0.5
+  entropy_low: 0.4
+  entropy_high: 0.9
+  max_active: 3
+  prototype_ema_beta: 0.1
+  task_prototype_ema_gamma: 0.1
+  projection:
+    enabled: true
+    hidden_dim: null
+    dropout: 0.0
+replay:
+  enabled: true
+  per_expert_capacity: 200
+  replay_batch_size: 32
+  global_replay: false
+train:
+  epochs_per_task: 1
+  lr: 0.0003
+  weight_decay: 0.01
+  lambda_replay: 1.0
+  lambda_route: 0.1
+  log_every: 50
+
+[2026-04-28 21:32:49,704][__main__][INFO] - Using device: DeviceInfo(backend=mps, device=mps)
+[2026-04-28 21:32:50,970][__main__][INFO] - Replay buffer: PerExpertReplayBuffer (capacity=200)
+[2026-04-28 21:32:51,108][clr_routing.continual.trainer][INFO] - Starting task 0 (10 classes)
+[2026-04-28 21:32:52,835][clr_routing.continual.trainer][INFO] - task=0 step=0 loss_total=10.4002 loss_task=5.2384 loss_replay=5.1561 loss_route=0.0567
+[2026-04-28 21:33:22,063][clr_routing.continual.trainer][INFO] - task=0 step=50 loss_total=1.1866 loss_task=0.7249 loss_replay=0.4576 loss_route=0.0411
+[2026-04-28 21:33:49,978][clr_routing.continual.trainer][INFO] - task=0 step=100 loss_total=0.5483 loss_task=0.4561 loss_replay=0.0851 loss_route=0.0709
+[2026-04-28 21:34:17,797][clr_routing.continual.trainer][INFO] - task=0 step=150 loss_total=0.2682 loss_task=0.0599 loss_replay=0.2004 loss_route=0.0794
+[2026-04-28 21:34:46,163][clr_routing.continual.trainer][INFO] - task=0 step=200 loss_total=0.3368 loss_task=0.2806 loss_replay=0.0496 loss_route=0.0654
+[2026-04-28 21:35:13,738][clr_routing.continual.trainer][INFO] - task=0 step=250 loss_total=0.1261 loss_task=0.0902 loss_replay=0.0301 loss_route=0.0577
+[2026-04-28 21:35:41,268][clr_routing.continual.trainer][INFO] - task=0 step=300 loss_total=0.0598 loss_task=0.0441 loss_replay=0.0086 loss_route=0.0715
+[2026-04-28 21:36:09,417][clr_routing.continual.trainer][INFO] - task=0 step=350 loss_total=0.0762 loss_task=0.0603 loss_replay=0.0126 loss_route=0.0332
+[2026-04-28 21:36:36,880][clr_routing.continual.trainer][INFO] - task=0 step=400 loss_total=0.0341 loss_task=0.0075 loss_replay=0.0201 loss_route=0.0649
+[2026-04-28 21:37:05,528][clr_routing.continual.trainer][INFO] - task=0 step=450 loss_total=0.0527 loss_task=0.0061 loss_replay=0.0414 loss_route=0.0512
+[2026-04-28 21:37:34,061][clr_routing.continual.trainer][INFO] - task=0 step=500 loss_total=0.0534 loss_task=0.0440 loss_replay=0.0069 loss_route=0.0248
+[2026-04-28 21:38:02,262][clr_routing.continual.trainer][INFO] - task=0 step=550 loss_total=0.0205 loss_task=0.0141 loss_replay=0.0025 loss_route=0.0392
+[2026-04-28 21:38:30,140][clr_routing.continual.trainer][INFO] - task=0 step=600 loss_total=0.2269 loss_task=0.2158 loss_replay=0.0078 loss_route=0.0324
+[2026-04-28 21:38:51,360][clr_routing.continual.trainer][INFO] - After task 0 — avg_acc=0.9590 avg_forget=0.0000 bwt=0.0000
+[2026-04-28 21:38:51,360][clr_routing.continual.trainer][INFO] - Starting task 1 (10 classes)
+[2026-04-28 21:39:05,862][clr_routing.continual.trainer][INFO] - task=1 step=650 loss_total=1.1044 loss_task=0.5380 loss_replay=0.5646 loss_route=0.0181
+[2026-04-28 21:39:34,586][clr_routing.continual.trainer][INFO] - task=1 step=700 loss_total=0.5517 loss_task=0.4971 loss_replay=0.0525 loss_route=0.0211
+[2026-04-28 21:40:02,903][clr_routing.continual.trainer][INFO] - task=1 step=750 loss_total=0.1942 loss_task=0.1119 loss_replay=0.0800 loss_route=0.0242
+[2026-04-28 21:40:30,911][clr_routing.continual.trainer][INFO] - task=1 step=800 loss_total=0.0782 loss_task=0.0198 loss_replay=0.0553 loss_route=0.0317
+[2026-04-28 21:40:59,086][clr_routing.continual.trainer][INFO] - task=1 step=850 loss_total=0.0999 loss_task=0.0581 loss_replay=0.0397 loss_route=0.0202
+[2026-04-28 21:41:27,399][clr_routing.continual.trainer][INFO] - task=1 step=900 loss_total=0.0319 loss_task=0.0176 loss_replay=0.0126 loss_route=0.0171

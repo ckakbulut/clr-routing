@@ -1,0 +1,3 @@
+[2026-04-25 03:02:53,012][timm.models._builder][INFO] - Loading pretrained weights from Hugging Face hub (timm/vit_small_patch16_224.augreg_in21k_ft_in1k)
+[2026-04-25 03:02:53,196][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/timm/vit_small_patch16_224.augreg_in21k_ft_in1k/resolve/main/model.safetensors "HTTP/1.1 302 Found"
+[2026-04-25 03:02:53,200][timm.models._hub][INFO] - [timm/vit_small_patch16_224.augreg_in21k_ft_in1k] Safe alternative available for 'pytorch_model.bin' (as 'model.safetensors'). Loading weights using safetensors.

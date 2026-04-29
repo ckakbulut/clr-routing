@@ -1,0 +1,47 @@
+[2026-04-28 21:32:39,760][__main__][INFO] - Resolved config:
+method: prototype
+wandb:
+  name: proto_per_expert_smoke
+  project: clr-routing
+  mode: disabled
+seed: 42
+device: auto
+data:
+  name: split_cifar100
+  num_tasks: 2
+  classes_per_task: 10
+  root: ./data
+  batch_size: 8
+  num_workers: 0
+model:
+  backbone: vit_small_patch16_224
+  pretrained: true
+  num_classes: 100
+  num_experts: 5
+  lora_rank: 8
+  lora_alpha: 16
+routing:
+  temperature: 0.5
+  entropy_low: 0.4
+  entropy_high: 0.9
+  max_active: 3
+  prototype_ema_beta: 0.1
+  task_prototype_ema_gamma: 0.1
+  projection:
+    enabled: true
+    hidden_dim: null
+    dropout: 0.0
+replay:
+  enabled: true
+  per_expert_capacity: 200
+  replay_batch_size: 32
+  global_replay: false
+train:
+  epochs_per_task: 1
+  lr: 0.0003
+  weight_decay: 0.01
+  lambda_replay: 1.0
+  lambda_route: 0.1
+  log_every: 50
+
+[2026-04-28 21:32:39,775][__main__][INFO] - Using device: DeviceInfo(backend=mps, device=mps)

@@ -1,0 +1,3 @@
+[2026-04-24 19:33:09,529][timm.models._builder][INFO] - Loading pretrained weights from Hugging Face hub (timm/vit_small_patch16_224.augreg_in21k_ft_in1k)
+[2026-04-24 19:33:09,777][httpx][INFO] - HTTP Request: HEAD https://huggingface.co/timm/vit_small_patch16_224.augreg_in21k_ft_in1k/resolve/main/model.safetensors "HTTP/1.1 302 Found"
+[2026-04-24 19:33:10,006][httpx][INFO] - HTTP Request: GET https://huggingface.co/api/models/timm/vit_small_patch16_224.augreg_in21k_ft_in1k/xet-read-token/7e2c55630205e1266030f18370f4c6ed1a514b52 "HTTP/1.1 200 OK"
