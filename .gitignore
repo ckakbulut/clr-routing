@@ -6,9 +6,7 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 
-data/
 checkpoints/
-outputs/
 wandb/
 .hydra/
 
@@ -17,3 +15,5 @@ wandb/
 .vscode/
 *.swp
 bugs.md
+claude.md
+/data/
