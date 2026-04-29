@@ -94,6 +94,31 @@ def test_entropy_gate_max_n_one():
     assert gate(e).tolist() == [1, 1, 1]
 
 
+def test_entropy_gate_default_thresholds_split_5_expert_distribution():
+    """Regression: with the configured (entropy_low, entropy_high) defaults
+    and num_experts=5 / temperature=0.5, the gate must produce {1, 2, 3}
+    across realistic routing distributions, not a flat n=3.
+
+    Pre-fix calibration was (0.4, 0.9), which left the n=1 and n=2 bins
+    unreachable on natural ViT features (entropy floor sat above 0.9), so
+    `num_active_mean` was pinned at 3 for every batch of every task.
+    """
+    gate = EntropyGate(entropy_low=0.7, entropy_high=1.3)
+    # Distributions chosen so their entropies bracket each bin under T=0.5:
+    #   - one cos≈1, others cos≈-0.5  -> logits/T = [2, -1, -1, -1, -1] -> H≈0.68 (< 0.7) -> n=1
+    #   - one cos≈1, others cos≈0     -> logits/T = [2,  0,  0,  0,  0] -> H≈1.14         -> n=2
+    #   - near-uniform                -> H≈log(5)≈1.61                                  -> n=3
+    logits_n1 = torch.tensor([[2.0, -1.0, -1.0, -1.0, -1.0]])
+    logits_n2 = torch.tensor([[2.0, 0.0, 0.0, 0.0, 0.0]])
+    logits_n3 = torch.tensor([[0.05, 0.0, -0.05, 0.0, 0.05]])
+    for logits, expected in [(logits_n1, 1), (logits_n2, 2), (logits_n3, 3)]:
+        dist = torch.softmax(logits, dim=-1)
+        e = _entropy(dist)
+        assert gate(e).item() == expected, (
+            f"expected n_active={expected} for entropy={e.item():.3f}, got {gate(e).item()}"
+        )
+
+
 def test_prototype_memory_first_update_initializes_directly():
     mem = PrototypeMemory(num_experts=3, embed_dim=4, max_tasks=5)
     samples = torch.tensor([[1.0, 0.0, 0.0, 0.0], [3.0, 0.0, 0.0, 0.0]])

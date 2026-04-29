@@ -43,8 +43,6 @@ class TrainerConfig:
     # gradient path and any non-zero weight here is a silent no-op.
     lambda_route: float = 0.0
 
-    # How many representations to use per prototype update step.
-    prototype_update_period: int = 1
     log_every: int = 50
 
 
