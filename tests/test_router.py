@@ -10,6 +10,7 @@ from clr_routing.models.router import (
     FixedTopKRouter,
     PrototypeMemory,
     PrototypeRouter,
+    RoutingProjection,
     _entropy,
     _select_top_n,
 )
@@ -150,6 +151,101 @@ def test_fixed_topk_activates_exactly_k():
     r = torch.randn(3, 4)
     decision = router.route(r)
     assert (decision.weights > 0).sum(dim=-1).tolist() == [2, 2, 2]
+
+
+def test_routing_kl_loss_gradient_reaches_projection():
+    """End-to-end: with the projection wired into both PrototypeRouter and
+    RoutingKLLoss, backprop on lambda_route * loss_route must produce a
+    non-zero gradient on the projection's parameters."""
+    from clr_routing.continual.losses import RoutingKLLoss
+
+    mem = PrototypeMemory(num_experts=3, embed_dim=4, max_tasks=2)
+    for k, v in enumerate([
+        [1.0, 0.1, 0.0, 0.0],
+        [0.0, 1.0, 0.1, 0.0],
+        [0.0, 0.0, 1.0, 0.1],
+    ]):
+        mem.update_expert(k, torch.tensor([v]))
+    mem.update_task(0, torch.tensor([[0.7, 0.7, 0.0, 0.0]]))
+
+    proj = RoutingProjection(embed_dim=4)
+    torch.nn.init.normal_(proj.fc2.weight, std=0.1)
+
+    gate = EntropyGate(0.4, 0.9)
+    router = PrototypeRouter(mem, gate, num_experts=3, temperature=0.5, projection=proj)
+    loss_fn = RoutingKLLoss(memory=mem, temperature=0.5, projection=proj)
+
+    r = torch.randn(4, 4)
+    decision = router.route(r)
+    loss = loss_fn(decision.distribution, task_id=0)
+    loss.backward()
+
+    assert proj.fc1.weight.grad is not None
+    assert proj.fc1.weight.grad.abs().sum().item() > 0.0
+
+
+def test_routing_projection_is_identity_at_init():
+    """Zero-init of fc2 + residual means projection(x) == x at step 0,
+    so the no-projection baseline is preserved before training."""
+    proj = RoutingProjection(embed_dim=8)
+    x = torch.randn(3, 8)
+    out = proj(x)
+    assert torch.allclose(out, x, atol=1e-7)
+
+
+def test_routing_projection_gives_routing_distribution_a_gradient():
+    """Without a projection, q(x) is gradient-free. With one, the gradient of
+    q(x) w.r.t. the projection's parameters is non-zero."""
+    mem = PrototypeMemory(num_experts=3, embed_dim=4, max_tasks=2)
+    for k, v in enumerate([
+        [1.0, 0.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+    ]):
+        mem.update_expert(k, torch.tensor([v]))
+
+    proj = RoutingProjection(embed_dim=4)
+    # Force fc2 off-zero so the gradient is non-trivial; otherwise the
+    # zero-init residual means the only gradient is through fc1, which still
+    # works but is harder to assert about cleanly.
+    torch.nn.init.normal_(proj.fc2.weight, std=0.1)
+
+    gate = EntropyGate(0.4, 0.9)
+    router = PrototypeRouter(mem, gate, num_experts=3, temperature=0.5, projection=proj)
+    r = torch.randn(2, 4)  # detached; no grad on r itself
+    decision = router.route(r)
+    # Sum-of-distribution is identically batch_size (softmax rows sum to 1),
+    # so we use an arbitrary linear functional that actually depends on the
+    # distribution's per-class probabilities.
+    target = torch.tensor([1.0, -0.5, 2.0])
+    (decision.distribution * target).sum().backward()
+
+    # Gradient must reach the projection's fc1 weights.
+    assert proj.fc1.weight.grad is not None
+    assert proj.fc1.weight.grad.abs().sum().item() > 0.0
+
+
+def test_prototype_router_without_projection_matches_old_behavior():
+    """With projection=None, route() must produce identical output to the
+    no-projection version (regression guard for default-behavior preservation)."""
+    mem = PrototypeMemory(num_experts=3, embed_dim=4, max_tasks=2)
+    for k, v in enumerate([
+        [1.0, 0.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+    ]):
+        mem.update_expert(k, torch.tensor([v]))
+
+    gate = EntropyGate(0.4, 0.9)
+    router_no_proj = PrototypeRouter(mem, gate, num_experts=3, temperature=0.5)
+    router_id_proj = PrototypeRouter(
+        mem, gate, num_experts=3, temperature=0.5,
+        projection=RoutingProjection(embed_dim=4),  # zero-init -> identity
+    )
+    r = torch.randn(5, 4)
+    d1 = router_no_proj.route(r)
+    d2 = router_id_proj.route(r)
+    assert torch.allclose(d1.distribution, d2.distribution, atol=1e-6)
 
 
 def test_prototype_router_ignores_uninitialized_experts():

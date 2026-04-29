@@ -13,6 +13,43 @@ from dataclasses import dataclass
 
 import torch
 from torch import nn
+from torch.nn import functional as F
+
+
+class RoutingProjection(nn.Module):
+    """Small residual MLP that maps r(x) into the prototype space for routing.
+
+    Without this projection, both r(x) (frozen backbone output) and p_k
+    (no-grad EMA buffer) carry no gradient w.r.t. any trainable parameter, so
+    the routing distribution q(x) is gradient-free and any routing supervision
+    on q(x) (eqs. (9)-(10) of the report) collapses to a no-op. Inserting a
+    trainable projection on r(x) — i.e. s_k(x) = cos(MLP(r(x)), p_k) — is the
+    smallest change that restores the gradient path through s_k(x) without
+    altering the prototype-EMA semantics.
+
+    The block is implemented as a residual MLP with the second linear's
+    weights/bias zero-initialized, so at step 0 the projection is the identity
+    and routing behavior matches the no-projection baseline. Training then
+    deforms the routing geometry to match the routing-loss target.
+    """
+
+    def __init__(
+        self,
+        embed_dim: int,
+        hidden_dim: int | None = None,
+        dropout: float = 0.0,
+    ) -> None:
+        super().__init__()
+        h = hidden_dim if hidden_dim is not None else embed_dim
+        self.fc1 = nn.Linear(embed_dim, h)
+        self.fc2 = nn.Linear(h, embed_dim)
+        self.dropout = nn.Dropout(dropout) if dropout > 0 else nn.Identity()
+        # Zero-init the residual branch so MLP(x) = x at step 0.
+        nn.init.zeros_(self.fc2.weight)
+        nn.init.zeros_(self.fc2.bias)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return x + self.fc2(self.dropout(F.gelu(self.fc1(x))))
 
 
 @dataclass
@@ -146,23 +183,19 @@ class RoutingStrategy(nn.Module, ABC):
 class PrototypeRouter(RoutingStrategy):
     """Cosine-similarity routing over expert prototypes with entropy-adaptive top-N.
 
-    s_k(x) = cos(r(x), p_k)
-    q(x)   = softmax(s(x) / temperature)
-    Number of selected experts is determined by the entropy of q(x) via
-    `EntropyGate`.
+    With a `RoutingProjection` φ:
+        s_k(x) = cos(φ(r(x)), p_k)
+        q(x)   = softmax(s(x) / temperature)
+    Without the projection (φ = identity), this reduces to the report's
+    s_k(x) = cos(r(x), p_k), but the routing distribution carries no gradient
+    w.r.t. any trainable parameter (frozen backbone + buffer prototypes), so
+    any routing supervision on q(x) is a silent no-op. Passing in a
+    `RoutingProjection` restores the gradient path through s_k(x).
 
-    Note on the routing KL loss collapse:
-        `q(x)` is built from the frozen backbone representation `r(x)` and the
-        EMA-updated expert prototypes `p_k` (registered as buffers, not
-        parameters). Neither carries a gradient w.r.t. any trainable parameter,
-        so the routing distribution itself is gradient-free. Consequently the
-        proposed `loss_route = KL(q̃ || q)` has no gradient path and contributes
-        nothing during training. We disable it by setting `lambda_route = 0` at
-        the config level rather than introducing a trainable projection here,
-        which would change the methodology beyond a bug fix.
-        TODO: revisit routing supervision design (e.g., a trainable projection
-        on `r(x)` or learnable expert prototypes) so eqs. (9)-(10) of the
-        report actually contribute gradient.
+    Number of selected experts is determined by the entropy of q(x) via
+    `EntropyGate`. Note that the prototypes are still updated in raw r-space
+    by the trainer; the projection learns to align φ(r(x)) with the EMA
+    prototypes during training.
     """
 
     def __init__(
@@ -171,18 +204,24 @@ class PrototypeRouter(RoutingStrategy):
         gate: EntropyGate,
         num_experts: int,
         temperature: float = 0.5,
+        projection: RoutingProjection | None = None,
     ) -> None:
         super().__init__()
         self._memory = memory
         self._gate = gate
         self._num_experts = num_experts
         self._temperature = temperature
+        # Registered as a submodule so its parameters appear in
+        # `learner.parameters()` and are picked up by the optimizer.
+        self.projection = projection
 
     @property
     def num_experts(self) -> int:
         return self._num_experts
 
     def route(self, representation: torch.Tensor) -> RoutingDecision:
+        if self.projection is not None:
+            representation = self.projection(representation)
         r = _safe_normalize(representation)  # (B, D)
         p = self._memory.expert_prototypes_normalized()  # (E, D)
 

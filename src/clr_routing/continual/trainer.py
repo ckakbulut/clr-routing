@@ -38,14 +38,9 @@ class TrainerConfig:
     num_workers: int = 4
 
     lambda_replay: float = 1.0
-    # Routing KL loss is disabled (lambda_route = 0) because the routing
-    # distribution q(x) is built from the frozen backbone representation and
-    # EMA-updated prototype buffers, neither of which carry a gradient. The
-    # KL(q̃ || q) term therefore has no gradient path and contributes nothing
-    # to training — multiplying by 0 makes that explicit.
-    # TODO: re-enable once the router has a trainable parameter on the path
-    # from r(x) to q(x) (e.g., a learned projection or learnable prototypes),
-    # so eqs. (9)-(10) of the report actually backpropagate.
+    # Weight on the routing KL loss. Functional whenever the router was
+    # constructed with a `RoutingProjection`; without one, q(x) has no
+    # gradient path and any non-zero weight here is a silent no-op.
     lambda_route: float = 0.0
 
     # How many representations to use per prototype update step.
