@@ -35,6 +35,7 @@ from clr_routing.models import (
     LoRAExpertBank,
     PrototypeMemory,
     PrototypeRouter,
+    RoutingProjection,
     ViTBackbone,
 )
 from clr_routing.utils import WandBLogger, select_device, set_seed
@@ -42,7 +43,25 @@ from clr_routing.utils import WandBLogger, select_device, set_seed
 log = logging.getLogger(__name__)
 
 
-def build_router(cfg: DictConfig, memory: PrototypeMemory):
+def build_routing_projection(cfg: DictConfig, embed_dim: int) -> RoutingProjection | None:
+    """Build the routing projection if enabled. Only meaningful for the
+    prototype router (FixedTopK has no routing supervision to drive).
+    """
+    proj_cfg = cfg.routing.get("projection", None)
+    if proj_cfg is None or not proj_cfg.get("enabled", False):
+        return None
+    return RoutingProjection(
+        embed_dim=embed_dim,
+        hidden_dim=proj_cfg.get("hidden_dim", None),
+        dropout=proj_cfg.get("dropout", 0.0),
+    )
+
+
+def build_router(
+    cfg: DictConfig,
+    memory: PrototypeMemory,
+    projection: RoutingProjection | None = None,
+):
     method = cfg.method
     if method == "prototype":
         gate = EntropyGate(
@@ -55,6 +74,7 @@ def build_router(cfg: DictConfig, memory: PrototypeMemory):
             gate=gate,
             num_experts=cfg.model.num_experts,
             temperature=cfg.routing.temperature,
+            projection=projection,
         )
     if method.startswith("fixed_top"):
         k = int(method.replace("fixed_top", ""))
@@ -116,7 +136,11 @@ def main(cfg: DictConfig) -> None:
         expert_ema_beta=cfg.routing.prototype_ema_beta,
         task_ema_gamma=cfg.routing.task_prototype_ema_gamma,
     )
-    router = build_router(cfg, memory)
+    # Built once and shared between the router (for q(x)) and the routing
+    # loss (for q̃). The shared Parameter objects are registered on the
+    # learner via the router, so a single optimizer covers them.
+    projection = build_routing_projection(cfg, backbone.embed_dim)
+    router = build_router(cfg, memory, projection=projection)
     classifier = nn.Linear(backbone.embed_dim, cfg.model.num_classes)
     learner = ContinualLearner(backbone, lora_bank, router, classifier)
 
@@ -130,10 +154,20 @@ def main(cfg: DictConfig) -> None:
     trainable = [p for p in learner.parameters() if p.requires_grad]
     optimizer = torch.optim.AdamW(trainable, lr=cfg.train.lr, weight_decay=cfg.train.weight_decay)
     routing_loss = (
-        RoutingKLLoss(memory=memory, temperature=cfg.routing.temperature)
+        RoutingKLLoss(
+            memory=memory,
+            temperature=cfg.routing.temperature,
+            projection=projection,
+        )
         if cfg.train.lambda_route > 0
         else None
     )
+    if cfg.train.lambda_route > 0 and projection is None:
+        log.warning(
+            "lambda_route=%s but routing.projection is disabled — q(x) has no "
+            "gradient path so the routing loss will not train anything.",
+            cfg.train.lambda_route,
+        )
     metrics = ContinualMetrics(num_tasks=cfg.data.num_tasks)
     trainer_cfg = TrainerConfig(
         epochs_per_task=cfg.train.epochs_per_task,

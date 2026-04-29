@@ -13,6 +13,7 @@ from clr_routing.models.router import (
     PrototypeMemory,
     PrototypeRouter,
     RoutingDecision,
+    RoutingProjection,
     RoutingStrategy,
 )
 
@@ -86,6 +87,7 @@ __all__ = [
     "PrototypeMemory",
     "PrototypeRouter",
     "RoutingDecision",
+    "RoutingProjection",
     "RoutingStrategy",
     "ViTBackbone",
 ]
