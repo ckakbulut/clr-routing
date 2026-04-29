@@ -107,9 +107,9 @@ class PrototypeMemory(nn.Module):
         """
         new = samples.mean(dim=0)
         if bool(self.expert_initialized[expert_id]):
-            self.expert_prototypes[expert_id] = (
-                (1 - self._beta) * self.expert_prototypes[expert_id] + self._beta * new
-            )
+            self.expert_prototypes[expert_id] = (1 - self._beta) * self.expert_prototypes[
+                expert_id
+            ] + self._beta * new
         else:
             self.expert_prototypes[expert_id] = new
             self.expert_initialized[expert_id] = True
@@ -118,9 +118,9 @@ class PrototypeMemory(nn.Module):
     def update_task(self, task_id: int, samples: torch.Tensor) -> None:
         new = samples.mean(dim=0)
         if bool(self.task_initialized[task_id]):
-            self.task_prototypes[task_id] = (
-                (1 - self._gamma) * self.task_prototypes[task_id] + self._gamma * new
-            )
+            self.task_prototypes[task_id] = (1 - self._gamma) * self.task_prototypes[
+                task_id
+            ] + self._gamma * new
         else:
             self.task_prototypes[task_id] = new
             self.task_initialized[task_id] = True
@@ -245,6 +245,13 @@ class PrototypeRouter(RoutingStrategy):
         # Mask uninitialized experts: their zero prototype rows would otherwise
         # contribute exp(0)/Z to the softmax and pollute routing.
         init_mask = self._memory.expert_initialized.to(scores.device)
+
+        # ---- diagnostics -----
+        self._last_raw_scores = scores.detach()
+        self._last_reprs = r.detach()
+        self._last_init_mask = init_mask.detach()
+        # ---------------------------------------
+
         scores = scores.masked_fill(~init_mask.unsqueeze(0), float("-inf"))
         distribution = torch.softmax(scores / self._temperature, dim=-1)
         entropy = _entropy(distribution)
@@ -309,13 +316,15 @@ class FixedTopKRouter(RoutingStrategy):
         entropy = _entropy(distribution)
         # Cap k by the number of initialized experts in the early phase.
         k_eff = min(self._k, int(init_mask.sum().item()))
-        n_active = torch.full((distribution.shape[0],), k_eff,
-                              dtype=torch.long, device=distribution.device)
+        n_active = torch.full(
+            (distribution.shape[0],), k_eff, dtype=torch.long, device=distribution.device
+        )
         weights = _select_top_n(distribution, n_active)
         return RoutingDecision(weights, distribution, entropy, n_active)
 
 
 # ---------- helpers ----------
+
 
 def _safe_normalize(x: torch.Tensor, eps: float = 1e-8) -> torch.Tensor:
     return x / (x.norm(dim=-1, keepdim=True).clamp_min(eps))

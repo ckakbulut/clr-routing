@@ -26,6 +26,12 @@ from clr_routing.models import ContinualLearner
 from clr_routing.models.router import PrototypeMemory
 from clr_routing.utils.device import DeviceInfo
 
+from clr_routing.utils.diagnostics import (
+    pairwise_prototype_cosines,
+    routing_score_stats,
+    representation_anisotropy,
+)
+
 log = logging.getLogger(__name__)
 
 
@@ -169,6 +175,12 @@ class ContinualTrainer:
         logits, decision = self._learner(x, return_routing=True, representation=r)
         loss_task = F.cross_entropy(logits, y)
 
+        # --- routing diagnostics (gated to log cadence). Must run BEFORE the
+        # replay forward, which would overwrite router._last_raw_scores with
+        # replay-batch scores. ---
+        if self._global_step % self._cfg.log_every == 0:
+            self._log_routing_diagnostics(r)
+
         # --- update expert prototypes by argmax routing assignment ---
         if is_bootstrap:
             assignment = bootstrap_assignment
@@ -235,6 +247,38 @@ class ContinualTrainer:
             "routing_entropy_mean": float(decision.entropy.mean().detach()),
             "num_active_mean": float(decision.num_active.float().mean().detach()),
         }
+
+    # ---------- diagnostics ----------
+
+    def _log_routing_diagnostics(self, r: torch.Tensor) -> None:
+        """Log pairwise prototype cosines, routing-score spread, and
+        representation anisotropy. Useful for diagnosing prototype collapse
+        and anisotropy-driven uniform routing.
+        """
+        router = self._learner.router  # ADJUST IF NEEDED
+        if not hasattr(router, "_last_raw_scores"):
+            return  # router hasn't stashed yet (e.g. eval-only path)
+
+        init_mask = self._memory.expert_initialized
+        prototypes = self._memory.prototypes  # ADJUST IF NEEDED
+
+        proto_stats = pairwise_prototype_cosines(prototypes, init_mask)
+        score_stats = routing_score_stats(router._last_raw_scores, init_mask)
+        aniso = representation_anisotropy(r)
+
+        self._log(
+            {
+                "diag/n_initialized_experts": proto_stats["n_initialized"],
+                "diag/proto_cos_mean": proto_stats["mean"],
+                "diag/proto_cos_std":  proto_stats["std"],
+                "diag/proto_cos_min":  proto_stats["min"],
+                "diag/proto_cos_max":  proto_stats["max"],
+                "diag/score_std_per_input":   score_stats["score_std_per_input_mean"],
+                "diag/score_range_per_input": score_stats["score_range_per_input_mean"],
+                "diag/repr_anisotropy": aniso,
+            },
+            self._global_step,
+        )
 
     # ---------- evaluation ----------
 
