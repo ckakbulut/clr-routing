@@ -1,4 +1,4 @@
-# CLMM — Continual Learning with Multi-Expert LoRA Routing
+# PROPEL: Prototype-guided Parameter-Efficient Continual Learning
 
 **Uncertainty-Aware Prototype-Guided Routing with LoRA Experts for Task-Agnostic Continual Learning**
 
