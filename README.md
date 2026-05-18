@@ -10,14 +10,14 @@ Group project for **COMS6998: Continual Learning and Memory Models**
 
 ## Introduction
 
-Modern neural networks struggle with *catastrophic forgetting*: when trained sequentially on a stream of tasks, they tend to overwrite knowledge acquired on earlier tasks as they learn new ones. This project addresses that problem in a *task-agnostic* setting — the model receives no task identity at training or inference time.
+Modern neural networks struggle with *catastrophic forgetting*: when trained sequentially on a stream of tasks, they tend to overwrite knowledge acquired on earlier tasks as they learn new ones. This project addresses that problem in a *task-agnostic* setting in which the model receives no task identity at training or inference time.
 
-Our approach combines three ideas:
+Our approach combines the following ideas:
 
 - **Frozen ViT backbone + LoRA expert adapters.** A pretrained Vision Transformer (ViT-Tiny) is kept frozen. A bank of lightweight LoRA adapters is injected into every MLP layer. Each adapter specialises on a different region of the input distribution.
 - **Prototype-guided routing.** Per-class and per-expert prototype vectors are maintained as exponential moving averages. At each forward pass, the routing distribution is computed as a cosine-similarity softmax between the input embedding and the expert prototypes.
 - **Entropy-adaptive expert selection.** Instead of always activating a fixed number of experts, the system uses the entropy of the routing distribution to decide how many experts to use per sample: low-entropy (confident) inputs activate a single expert; high-entropy (ambiguous) inputs activate up to three. This reduces compute on easy samples while retaining capacity for hard ones.
-- **Expert-specific replay buffers.** A class-balanced replay buffer is maintained per expert. Samples are stored in the buffer of their top-1 routed expert, so replay draws from experts that actually processed each class — improving backward transfer and reducing interference.
+- **Expert-specific replay buffers.** A class-balanced replay buffer is maintained per expert. Samples are stored in the buffer of their top-1 routed expert, so replay draws from experts that actually processed each class, improving backward transfer and reducing interference.
 
 Baselines compare static top-1, top-2, and top-3 routing and global (non-expert-specific) replay.
 
@@ -66,11 +66,11 @@ clr-routing/
 **`CLMM_PROPEL_Notebook.ipynb` is a complete, top-to-bottom runnable instance of the entire project.** If you do not have access to local GPU compute, open it in Google Colab:
 
 1. Go to [colab.research.google.com](https://colab.research.google.com) and upload or open the notebook from your Google Drive.
-2. Enable a GPU: **Runtime → Change runtime type → T4 GPU** (or A100 if available).
-3. Run the cells from top to bottom — no other setup is needed. The notebook installs its own dependencies, downloads CIFAR-100, and saves all outputs (figures, accuracy matrices) to your Google Drive.
+2. Enable a GPU through Runtime → Change runtime type → T4 GPU (or A100 if available).
+3. Run the cells from top to bottom. No other setup is needed. The notebook installs its own dependencies, downloads CIFAR-100, and saves all outputs (figures, accuracy matrices) to your Google Drive.
 4. To run a quick smoke test instead of the full 7-task experiment, set `debug=True` in the configuration cell before running.
 
-The notebook is fully self-contained and does not require cloning the repository. It mirrors the `src/clmm/` package exactly — every function, class, and training loop in the package has a corresponding cell in the notebook.
+The notebook is fully self-contained and does not require cloning the repository. It mirrors the `src/clmm/` package exactly.
 
 ---
 
