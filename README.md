@@ -21,6 +21,8 @@ Our approach combines the following ideas:
 
 Baselines compare static top-1, top-2, and top-3 routing and global (non-expert-specific) replay.
 
+![CLMM Architecture](clmm_architecture.jpeg)
+
 ---
 
 ## File Structure
