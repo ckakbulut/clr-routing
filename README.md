@@ -21,7 +21,7 @@ Our approach combines the following ideas:
 
 Baselines compare static top-1, top-2, and top-3 routing and global (non-expert-specific) replay.
 
-![CLMM Architecture](clmm_architecture.jpeg)
+![CLMM Architecture](assets/clmm_architecture.jpeg)
 
 ---
 
@@ -30,7 +30,8 @@ Baselines compare static top-1, top-2, and top-3 routing and global (non-expert-
 ```
 clr-routing/
 │
-├── CLMM_PROPEL_Notebook.ipynb   # Self-contained Colab notebook (see below)
+├── assets/
+│   └── clmm_architecture.jpeg   # Architecture diagram
 │
 ├── src/clmm/                    # Main Python package
 │   ├── config.py                # Config dataclass — all hyperparameters in one place
@@ -55,7 +56,8 @@ clr-routing/
 │   └── test_clmm_metrics.py     # compute_metrics: avg accuracy, forgetting, BWT
 │
 ├── notebooks/
-│   └── run_experiments.ipynb    # Hydra-based multi-run notebook (older driver)
+│   ├── CLMM_PROPEL_Notebook.ipynb  # Self-contained Colab notebook (see below)
+│   └── run_experiments.ipynb        # Hydra-based multi-run notebook (older driver)
 │
 ├── pyproject.toml
 └── requirements.txt
@@ -65,7 +67,7 @@ clr-routing/
 
 ## Running on Google Colab (no local GPU required)
 
-**`CLMM_PROPEL_Notebook.ipynb` is a complete, top-to-bottom runnable instance of the entire project.** If you do not have access to local GPU compute, open it in Google Colab:
+**`notebooks/CLMM_PROPEL_Notebook.ipynb` is a complete, top-to-bottom runnable instance of the entire project.** If you do not have access to local GPU compute, open it in Google Colab:
 
 1. Go to [colab.research.google.com](https://colab.research.google.com) and upload or open the notebook from your Google Drive.
 2. Enable a GPU through Runtime → Change runtime type → T4 GPU (or A100 if available).
