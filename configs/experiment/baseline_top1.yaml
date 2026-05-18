@@ -1,7 +1,0 @@
-# @package _global_
-# Baseline: fixed top-1 routing (always pick the single best-matching expert).
-method: fixed_top1
-train:
-  lambda_route: 0.0  # no routing supervision for baselines
-wandb:
-  name: baseline_top1

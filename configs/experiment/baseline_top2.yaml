@@ -1,6 +1,0 @@
-# @package _global_
-method: fixed_top2
-train:
-  lambda_route: 0.0
-wandb:
-  name: baseline_top2
